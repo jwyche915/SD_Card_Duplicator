@@ -48,7 +48,8 @@ architecture structural of sd_card_duplicator_top is
     -- Active-high reset
     signal reset : std_logic;
 
-    -- Start button edge detection
+    -- Start button debounce + edge detection
+    signal btn_start_db : std_logic := '0';
     signal btn_start_d  : std_logic := '0';
     signal btn_start_re : std_logic := '0';
 
@@ -111,13 +112,27 @@ begin
     reset <= not reset_n;
 
     -- ==========================================================================
-    -- Button edge detector (rising edge of btn_start)
+    -- Button debouncer (~10 ms stabilisation window)
+    -- ==========================================================================
+    start_debounce : entity work.btn_debouncer
+        generic map (
+            DEBOUNCE_CYCLES => 1_000_000  -- 10 ms at 100 MHz
+        )
+        port map (
+            clk     => clk_100mhz,
+            reset   => reset,
+            btn_in  => btn_start,
+            btn_out => btn_start_db
+        );
+
+    -- ==========================================================================
+    -- Button edge detector (rising edge of debounced btn_start)
     -- ==========================================================================
     process (clk_100mhz)
     begin
         if rising_edge(clk_100mhz) then
-            btn_start_d  <= btn_start;
-            btn_start_re <= btn_start and not btn_start_d;
+            btn_start_d  <= btn_start_db;
+            btn_start_re <= btn_start_db and not btn_start_d;
         end if;
     end process;
 
