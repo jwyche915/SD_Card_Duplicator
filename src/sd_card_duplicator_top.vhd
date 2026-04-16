@@ -24,7 +24,7 @@ entity sd_card_duplicator_top is
 
         -- User controls
         btn_start     : in  std_logic;   -- BTNC: start copy
-        sw            : in  std_logic_vector(15 downto 0);  -- block count selector
+        sw            : in  std_logic_vector(15 downto 0);  -- bloc   k count selector
 
         -- Source SD card (onboard microSD slot, directly wired)
         src_sd_sclk   : out std_logic;
