@@ -34,6 +34,7 @@ add_files -fileset constrs_1 [glob [file join $script_dir "constrs" "*.xdc"]]
 
 # -- Add simulation sources ----------------------------------------------------
 add_files -fileset sim_1 [glob [file join $script_dir "sim" "*.vhd"]]
+set_property file_type {VHDL 2008} [get_files -of_objects [get_filesets sim_1]]
 
 # -- Set simulation top --------------------------------------------------------
 set_property top tb_spi_master [get_filesets sim_1]
