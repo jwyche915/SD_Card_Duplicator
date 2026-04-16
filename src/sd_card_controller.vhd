@@ -3,7 +3,8 @@
 -- SD card controller operating in SPI mode.
 --
 -- Supports:
---   - Full initialization:  power-up → CMD0 → CMD8 → CMD55/ACMD41 → CMD58
+--   - Full initialization:  power-up → CMD0 → CMD8 → CMD55/ACMD41 → CMD58 → CMD9
+--   - CSD register read:    CMD9 (auto-detects card capacity)
 --   - Single-block read:    CMD17
 --   - Single-block write:   CMD24
 --
@@ -54,10 +55,11 @@ entity sd_card_controller is
         block_addr   : in  std_logic_vector(31 downto 0);
 
         -- Status
-        busy         : out std_logic;
-        error        : out std_logic;
-        init_done    : out std_logic;
-        card_type    : out std_logic_vector(1 downto 0);  -- "01"=SDSC, "10"=SDHC
+        busy             : out std_logic;
+        error            : out std_logic;
+        init_done        : out std_logic;
+        card_type        : out std_logic_vector(1 downto 0);  -- "01"=SDSC, "10"=SDHC
+        card_total_blocks: out std_logic_vector(31 downto 0); -- total 512-byte blocks
 
         -- Read data output
         data_out       : out std_logic_vector(7 downto 0);
@@ -91,6 +93,11 @@ architecture rtl of sd_card_controller is
         ST_INIT_CMD58,        -- read OCR
         ST_INIT_CMD58_RESP,
         ST_INIT_CMD58_DATA,   -- read 4 OCR bytes
+        ST_INIT_CMD9,         -- send CSD (card size)
+        ST_INIT_CMD9_RESP,
+        ST_INIT_CMD9_TOKEN,   -- wait for data start token
+        ST_INIT_CMD9_DATA,    -- read 16 CSD bytes
+        ST_INIT_CMD9_CRC,     -- read/discard 2 CRC bytes
         ST_INIT_COMPLETE,
         -- Read sub-states
         ST_READ_CMD17,
@@ -153,18 +160,25 @@ architecture rtl of sd_card_controller is
     -- R7 / OCR byte index
     signal extra_byte_idx : unsigned(1 downto 0) := (others => '0');
 
+    -- CSD register buffer (16 bytes)
+    type csd_buf_t is array (0 to 15) of std_logic_vector(7 downto 0);
+    signal csd_buf       : csd_buf_t := (others => (others => '0'));
+    signal csd_byte_idx  : unsigned(4 downto 0) := (others => '0');
+    signal i_card_total_blocks : unsigned(31 downto 0) := (others => '0');
+
     -- Wait-for-response helpers
     signal wait_resp_cnt : unsigned(19 downto 0) := (others => '0');
 
 begin
 
-    busy      <= i_busy;
-    error     <= i_error;
-    init_done <= i_init_done;
-    fast_mode <= i_fast_mode;
-    card_type <= "10" when card_sdhc = '1' else
-                 "01" when i_init_done = '1' else
-                 "00";
+    busy              <= i_busy;
+    error             <= i_error;
+    init_done         <= i_init_done;
+    fast_mode         <= i_fast_mode;
+    card_type         <= "10" when card_sdhc = '1' else
+                         "01" when i_init_done = '1' else
+                         "00";
+    card_total_blocks <= std_logic_vector(i_card_total_blocks);
 
     -- =========================================================================
     -- Main FSM
@@ -515,15 +529,142 @@ begin
                     if spi_rx_valid = '1' then
                         ocr_data <= ocr_data(23 downto 0) & spi_rx_data;
                         if extra_byte_idx = 3 then
-                            state <= ST_INIT_COMPLETE;
+                            -- OCR bit 30 = CCS (Card Capacity Status)
+                            -- Latch it now before moving to CMD9
+                            card_sdhc <= ocr_data(22);  -- will be bit 30 after final shift
+                            spi_cs_n  <= '1';  -- deselect briefly
+                            state     <= ST_INIT_CMD9;
                         else
                             extra_byte_idx <= extra_byte_idx + 1;
                         end if;
                     end if;
 
+                -- =============================================================
+                -- INIT: CMD9 — SEND_CSD (read card capacity)
+                -- =============================================================
+                when ST_INIT_CMD9 =>
+                    spi_cs_n      <= '0';
+                    build_cmd(9, x"00000000", x"AF");
+                    cmd_byte_idx  <= (others => '0');
+                    wait_resp_cnt <= (others => '0');
+                    csd_byte_idx  <= (others => '0');
+                    send_byte     <= "01" & std_logic_vector(to_unsigned(9, 6));
+                    send_pending  <= '1';
+                    cmd_byte_idx  <= "001";
+                    state         <= ST_INIT_CMD9_RESP;
+
+                when ST_INIT_CMD9_RESP =>
+                    if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
+                        case cmd_byte_idx is
+                            when "001" => send_byte <= cmd_buf(39 downto 32);
+                            when "010" => send_byte <= cmd_buf(31 downto 24);
+                            when "011" => send_byte <= cmd_buf(23 downto 16);
+                            when "100" => send_byte <= cmd_buf(15 downto 8);
+                            when "101" => send_byte <= cmd_buf(7 downto 0);
+                            when others => null;
+                        end case;
+                        send_pending <= '1';
+                        cmd_byte_idx <= cmd_byte_idx + 1;
+                    end if;
+
+                    if cmd_byte_idx > 5 then
+                        if spi_tx_ready = '1' and send_pending = '0' then
+                            send_byte    <= x"FF";
+                            send_pending <= '1';
+                        end if;
+
+                        if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
+                            resp_r1       <= spi_rx_data;
+                            if spi_rx_data = x"00" then
+                                wait_resp_cnt <= (others => '0');
+                                state         <= ST_INIT_CMD9_TOKEN;
+                            else
+                                state <= ST_ERROR;
+                            end if;
+                        end if;
+                    end if;
+
+                -- Wait for data start token (0xFE)
+                when ST_INIT_CMD9_TOKEN =>
+                    if spi_tx_ready = '1' and send_pending = '0' then
+                        send_byte    <= x"FF";
+                        send_pending <= '1';
+                    end if;
+
+                    if spi_rx_valid = '1' then
+                        if spi_rx_data = x"FE" then
+                            csd_byte_idx <= (others => '0');
+                            state        <= ST_INIT_CMD9_DATA;
+                        else
+                            wait_resp_cnt <= wait_resp_cnt + 1;
+                            if wait_resp_cnt >= to_unsigned(CMD_TIMEOUT, 20) then
+                                state <= ST_ERROR;
+                            end if;
+                        end if;
+                    end if;
+
+                -- Read 16 CSD bytes
+                when ST_INIT_CMD9_DATA =>
+                    if spi_tx_ready = '1' and send_pending = '0' then
+                        send_byte    <= x"FF";
+                        send_pending <= '1';
+                    end if;
+
+                    if spi_rx_valid = '1' then
+                        csd_buf(to_integer(csd_byte_idx)) <= spi_rx_data;
+                        if csd_byte_idx = 15 then
+                            byte_counter <= (others => '0');
+                            state        <= ST_INIT_CMD9_CRC;
+                        else
+                            csd_byte_idx <= csd_byte_idx + 1;
+                        end if;
+                    end if;
+
+                -- Read & discard 2 CRC bytes
+                when ST_INIT_CMD9_CRC =>
+                    if spi_tx_ready = '1' and send_pending = '0' then
+                        send_byte    <= x"FF";
+                        send_pending <= '1';
+                    end if;
+
+                    if spi_rx_valid = '1' then
+                        if byte_counter = 1 then
+                            state <= ST_INIT_COMPLETE;
+                        else
+                            byte_counter <= byte_counter + 1;
+                        end if;
+                    end if;
+
                 when ST_INIT_COMPLETE =>
-                    -- OCR bit 30 = CCS (Card Capacity Status)
-                    card_sdhc   <= ocr_data(30);
+                    -- Parse CSD to determine card capacity
+                    if card_sdhc = '1' then
+                        -- CSD v2.0 (SDHC/SDXC)
+                        -- C_SIZE is in CSD bytes 7,8,9 bits [69:48]
+                        -- csd_buf[7][5:0] = C_SIZE[21:16]
+                        -- csd_buf[8][7:0] = C_SIZE[15:8]
+                        -- csd_buf[9][7:0] = C_SIZE[7:0]
+                        -- Total blocks = (C_SIZE + 1) * 1024
+                        i_card_total_blocks <= resize(
+                            (unsigned("0000000000" & csd_buf(7)(5 downto 0)
+                                      & csd_buf(8) & csd_buf(9)) + 1)
+                            & "0000000000",  -- * 1024
+                            32);
+                    else
+                        -- CSD v1.0 (SDSC)
+                        -- Simplified: assume READ_BL_LEN = 9 (512 bytes)
+                        -- C_SIZE = csd_buf[6][1:0] & csd_buf[7] & csd_buf[8][7:6]
+                        -- C_SIZE_MULT = csd_buf[9][1:0] & csd_buf[10][7]
+                        -- total_blocks = (C_SIZE + 1) * 2^(C_SIZE_MULT + 2)
+                        i_card_total_blocks <= resize(
+                            shift_left(
+                                resize(unsigned(csd_buf(6)(1 downto 0)
+                                                & csd_buf(7)
+                                                & csd_buf(8)(7 downto 6)) + 1, 32),
+                                to_integer(unsigned(csd_buf(9)(1 downto 0)
+                                                    & csd_buf(10)(7 downto 7)) + 2)
+                            ),
+                            32);
+                    end if;
                     i_init_done <= '1';
                     i_fast_mode <= '1';  -- switch to 25 MHz
                     spi_cs_n    <= '1';  -- deselect card

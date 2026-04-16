@@ -9,8 +9,9 @@
 -- User controls:
 --   CPU_RESET (active-low) = system reset
 --   BTNC      = start duplication
---   SW[15:0]  = total blocks to copy (x1024, so SW=1 → 1024 blocks = 512KB)
 --   LED[7:0]  = status display
+--
+-- Card size is auto-detected from the source card's CSD register.
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -24,7 +25,6 @@ entity sd_card_duplicator_top is
 
         -- User controls
         btn_start     : in  std_logic;   -- BTNC: start copy
-        sw            : in  std_logic_vector(15 downto 0);  -- block count selector
 
         -- Source SD card (onboard microSD slot, directly wired)
         src_sd_sclk   : out std_logic;
@@ -100,7 +100,7 @@ architecture structural of sd_card_duplicator_top is
     signal dst_data_in_req: std_logic;
 
     -- Duplicator FSM signals
-    signal total_blocks   : std_logic_vector(31 downto 0);
+    signal src_card_total_blocks : std_logic_vector(31 downto 0);
     signal current_block  : std_logic_vector(31 downto 0);
     signal fsm_idle       : std_logic;
     signal fsm_copying    : std_logic;
@@ -136,10 +136,6 @@ begin
         end if;
     end process;
 
-    -- Total blocks to copy: switches * 1024  (shift left 10)
-    total_blocks <= std_logic_vector(
-        resize(unsigned(sw) & "0000000000", 32)
-    );
 
     -- ==========================================================================
     -- Source card: Clock divider
@@ -194,6 +190,7 @@ begin
             error        => src_error,
             init_done    => src_init_done,
             card_type    => src_card_type,
+            card_total_blocks => src_card_total_blocks,
             data_out     => src_data_out,
             data_out_valid => src_data_out_v,
             data_in      => (others => '0'),
@@ -253,6 +250,7 @@ begin
             error        => dst_error,
             init_done    => dst_init_done,
             card_type    => dst_card_type,
+            card_total_blocks => open,
             data_out     => open,
             data_out_valid => open,
             data_in      => dst_data_in,
@@ -267,7 +265,6 @@ begin
             clk           => clk_100mhz,
             reset         => reset,
             start         => btn_start_re,
-            total_blocks  => total_blocks,
             current_block => current_block,
             fsm_idle      => fsm_idle,
             fsm_copying   => fsm_copying,
@@ -279,6 +276,7 @@ begin
             src_busy      => src_busy,
             src_error     => src_error,
             src_init_done => src_init_done,
+            src_card_total_blocks => src_card_total_blocks,
             src_data_out  => src_data_out,
             src_data_out_v=> src_data_out_v,
             dst_cmd_init  => dst_cmd_init,
@@ -305,7 +303,7 @@ begin
             src_init_done => src_init_done,
             dst_init_done => dst_init_done,
             current_block => current_block,
-            total_blocks  => total_blocks,
+            total_blocks  => src_card_total_blocks,
             led           => led
         );
 

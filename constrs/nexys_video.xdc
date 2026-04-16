@@ -24,25 +24,7 @@ set_property -dict { PACKAGE_PIN G4    IOSTANDARD LVCMOS15 } [get_ports { reset_
 ## ----------------------------------------------------------------------------
 set_property -dict { PACKAGE_PIN B22   IOSTANDARD LVCMOS12 } [get_ports { btn_start }]
 
-## ----------------------------------------------------------------------------
-## Switches SW[15:0] — Block count selector
-## ----------------------------------------------------------------------------
-set_property -dict { PACKAGE_PIN E22   IOSTANDARD LVCMOS12 } [get_ports { sw[0] }]
-set_property -dict { PACKAGE_PIN F21   IOSTANDARD LVCMOS12 } [get_ports { sw[1] }]
-set_property -dict { PACKAGE_PIN G21   IOSTANDARD LVCMOS12 } [get_ports { sw[2] }]
-set_property -dict { PACKAGE_PIN G22   IOSTANDARD LVCMOS12 } [get_ports { sw[3] }]
-set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS12 } [get_ports { sw[4] }]
-set_property -dict { PACKAGE_PIN J16   IOSTANDARD LVCMOS12 } [get_ports { sw[5] }]
-set_property -dict { PACKAGE_PIN K13   IOSTANDARD LVCMOS12 } [get_ports { sw[6] }]
-set_property -dict { PACKAGE_PIN M17   IOSTANDARD LVCMOS12 } [get_ports { sw[7] }]
-set_property -dict { PACKAGE_PIN R17   IOSTANDARD LVCMOS12 } [get_ports { sw[8] }]
-set_property -dict { PACKAGE_PIN R18   IOSTANDARD LVCMOS12 } [get_ports { sw[9] }]
-set_property -dict { PACKAGE_PIN P18   IOSTANDARD LVCMOS12 } [get_ports { sw[10] }]
-set_property -dict { PACKAGE_PIN N17   IOSTANDARD LVCMOS12 } [get_ports { sw[11] }]
-set_property -dict { PACKAGE_PIN K15   IOSTANDARD LVCMOS12 } [get_ports { sw[12] }]
-set_property -dict { PACKAGE_PIN L14   IOSTANDARD LVCMOS12 } [get_ports { sw[13] }]
-set_property -dict { PACKAGE_PIN L15   IOSTANDARD LVCMOS12 } [get_ports { sw[14] }]
-set_property -dict { PACKAGE_PIN M14   IOSTANDARD LVCMOS12 } [get_ports { sw[15] }]
+
 
 ## ----------------------------------------------------------------------------
 ## LEDs LED[7:0] — Status display

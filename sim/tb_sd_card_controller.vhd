@@ -129,6 +129,7 @@ begin
             error        => error_sig,
             init_done    => init_done,
             card_type    => card_type,
+            card_total_blocks => open,
             data_out     => data_out,
             data_out_valid => data_out_v,
             data_in      => data_in,

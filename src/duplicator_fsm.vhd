@@ -7,7 +7,7 @@
 --        → (loop until all blocks copied) → DONE
 --
 -- A 512-byte block RAM buffer is used to hold one block at a time.
--- The block count to copy is configurable via the total_blocks input.
+-- The block count is auto-detected from the source card's CSD register.
 -- Progress is reported via current_block output.
 --------------------------------------------------------------------------------
 library ieee;
@@ -21,7 +21,6 @@ entity duplicator_fsm is
 
         -- User controls
         start         : in  std_logic;              -- pulse to begin duplication
-        total_blocks  : in  std_logic_vector(31 downto 0);  -- blocks to copy
 
         -- Status
         current_block : out std_logic_vector(31 downto 0);
@@ -37,6 +36,7 @@ entity duplicator_fsm is
         src_busy       : in  std_logic;
         src_error      : in  std_logic;
         src_init_done  : in  std_logic;
+        src_card_total_blocks : in std_logic_vector(31 downto 0);
         src_data_out   : in  std_logic_vector(7 downto 0);
         src_data_out_v : in  std_logic;
 
@@ -122,8 +122,8 @@ begin
                     fsm_error   <= '0';
 
                     if start = '1' then
-                        total_blks <= unsigned(total_blocks);
                         block_cnt  <= (others => '0');
+                        total_blks <= (others => '0');
                         fsm_idle   <= '0';
                         state      <= ST_INIT_SRC;
                     end if;
@@ -139,7 +139,8 @@ begin
                     if src_error = '1' then
                         state <= ST_ERROR;
                     elsif src_init_done = '1' then
-                        state <= ST_INIT_DST;
+                        total_blks <= unsigned(src_card_total_blocks);
+                        state      <= ST_INIT_DST;
                     end if;
                     -- else keep waiting
 
