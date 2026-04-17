@@ -645,9 +645,10 @@ begin
                         -- csd_buf[9][7:0] = C_SIZE[7:0]
                         -- Total blocks = (C_SIZE + 1) * 1024
                         i_card_total_blocks <= resize(
-                            (unsigned("0000000000" & csd_buf(7)(5 downto 0)
-                                      & csd_buf(8) & csd_buf(9)) + 1)
-                            & "0000000000",  -- * 1024
+                            shift_left(
+                                resize(unsigned(csd_buf(7)(5 downto 0)
+                                                & csd_buf(8) & csd_buf(9)) + 1, 32),
+                                10),  -- * 1024
                             32);
                     else
                         -- CSD v1.0 (SDSC)
