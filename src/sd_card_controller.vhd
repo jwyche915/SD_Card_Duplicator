@@ -88,7 +88,7 @@ architecture rtl of sd_card_controller is
         ST_INIT_CMD8_DATA,    -- read 4 extra bytes of R7
         ST_INIT_CMD55,        -- app command prefix
         ST_INIT_CMD55_RESP,
-        ST_INIT_ACMD41,       -- send operating condition
+        ST_INIT_ACMD41,       -- poll card initialization status
         ST_INIT_ACMD41_RESP,
         ST_INIT_CMD58,        -- read OCR
         ST_INIT_CMD58_RESP,
@@ -134,8 +134,6 @@ architecture rtl of sd_card_controller is
     signal send_byte    : std_logic_vector(7 downto 0) := (others => '1');
 
     -- Response / data
-    signal resp_r1      : std_logic_vector(7 downto 0) := (others => '1');
-    signal r7_data      : std_logic_vector(31 downto 0) := (others => '0');
     signal ocr_data     : std_logic_vector(31 downto 0) := (others => '0');
     signal byte_counter : unsigned(9 downto 0) := (others => '0');
 
@@ -269,7 +267,7 @@ begin
                 when ST_INIT_CMD0 =>
                     spi_cs_n      <= '0';
                     build_cmd(0, x"00000000", x"95");
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     -- Send first byte
                     send_byte    <= cmd_buf(47 downto 40);
@@ -302,7 +300,7 @@ begin
 
                         if spi_rx_valid = '1' then
                             if spi_rx_data(7) = '0' then  -- valid R1 response
-                                resp_r1 <= spi_rx_data;
+
                                 if spi_rx_data = x"01" then  -- idle state, OK
                                     state <= ST_INIT_CMD8;
                                 else
@@ -323,7 +321,7 @@ begin
                 -- =============================================================
                 when ST_INIT_CMD8 =>
                     build_cmd(8, x"000001AA", x"87");
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     extra_byte_idx<= (others => '0');
                     send_byte     <= "01" & std_logic_vector(to_unsigned(8, 6));
@@ -355,7 +353,7 @@ begin
 
                         if spi_rx_valid = '1' then
                             if spi_rx_data(7) = '0' then
-                                resp_r1 <= spi_rx_data;
+
                                 if spi_rx_data = x"01" then
                                     -- SDv2 card: read 4 more bytes (R7)
                                     extra_byte_idx <= (others => '0');
@@ -384,7 +382,7 @@ begin
                     end if;
 
                     if spi_rx_valid = '1' then
-                        r7_data <= r7_data(23 downto 0) & spi_rx_data;
+
                         if extra_byte_idx = 3 then
                             -- Check echo pattern: should end in 0x1AA
                             state <= ST_INIT_CMD55;
@@ -398,7 +396,7 @@ begin
                 -- =============================================================
                 when ST_INIT_CMD55 =>
                     build_cmd(55, x"00000000", x"65");
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     send_byte     <= "01" & std_logic_vector(to_unsigned(55, 6));
                     send_pending  <= '1';
@@ -426,15 +424,15 @@ begin
                         end if;
 
                         if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-                            resp_r1 <= spi_rx_data;
+
                             state   <= ST_INIT_ACMD41;
                         end if;
                     end if;
 
                 when ST_INIT_ACMD41 =>
-                    -- ACMD41 with HCS bit (bit 30) to indicate SDHC support
+                    -- ACMD41: poll card initialization status (HCS bit 30 = SDHC support)
                     build_cmd(41, x"40000000", x"77");
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     send_byte     <= "01" & std_logic_vector(to_unsigned(41, 6));
                     send_pending  <= '1';
@@ -462,7 +460,7 @@ begin
                         end if;
 
                         if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-                            resp_r1 <= spi_rx_data;
+
                             if spi_rx_data = x"00" then
                                 -- Card is ready → read OCR
                                 state <= ST_INIT_CMD58;
@@ -485,7 +483,7 @@ begin
                 -- =============================================================
                 when ST_INIT_CMD58 =>
                     build_cmd(58, x"00000000", x"FD");
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     extra_byte_idx<= (others => '0');
                     send_byte     <= "01" & std_logic_vector(to_unsigned(58, 6));
@@ -514,7 +512,7 @@ begin
                         end if;
 
                         if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-                            resp_r1        <= spi_rx_data;
+
                             extra_byte_idx <= (others => '0');
                             state          <= ST_INIT_CMD58_DATA;
                         end if;
@@ -545,7 +543,7 @@ begin
                 when ST_INIT_CMD9 =>
                     spi_cs_n      <= '0';
                     build_cmd(9, x"00000000", x"AF");
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     csd_byte_idx  <= (others => '0');
                     send_byte     <= "01" & std_logic_vector(to_unsigned(9, 6));
@@ -574,7 +572,7 @@ begin
                         end if;
 
                         if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-                            resp_r1       <= spi_rx_data;
+
                             if spi_rx_data = x"00" then
                                 wait_resp_cnt <= (others => '0');
                                 state         <= ST_INIT_CMD9_TOKEN;
@@ -685,7 +683,7 @@ begin
                             std_logic_vector(unsigned(block_addr(22 downto 0)) & "000000000"),
                             x"FF");
                     end if;
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     send_byte     <= cmd_buf(47 downto 40);
                     send_pending  <= '1';
@@ -713,7 +711,7 @@ begin
                         end if;
 
                         if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-                            resp_r1 <= spi_rx_data;
+
                             if spi_rx_data = x"00" then
                                 wait_resp_cnt <= (others => '0');
                                 state         <= ST_READ_WAIT_TOKEN;
@@ -794,7 +792,7 @@ begin
                             std_logic_vector(unsigned(block_addr(22 downto 0)) & "000000000"),
                             x"FF");
                     end if;
-                    cmd_byte_idx  <= (others => '0');
+
                     wait_resp_cnt <= (others => '0');
                     send_byte     <= cmd_buf(47 downto 40);
                     send_pending  <= '1';
@@ -822,7 +820,7 @@ begin
                         end if;
 
                         if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-                            resp_r1 <= spi_rx_data;
+
                             if spi_rx_data = x"00" then
                                 state <= ST_WRITE_TOKEN;
                             else

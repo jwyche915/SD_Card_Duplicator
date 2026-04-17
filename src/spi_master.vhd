@@ -53,7 +53,7 @@ architecture rtl of spi_master is
     signal shift_out  : std_logic_vector(7 downto 0) := (others => '1');
     signal shift_in   : std_logic_vector(7 downto 0) := (others => '0');
     signal bit_cnt    : unsigned(3 downto 0)          := (others => '0');
-    signal sclk_int   : std_logic := '0';
+
     signal phase      : std_logic := '0';  -- 0 = leading edge, 1 = trailing edge
 
 begin
@@ -68,7 +68,7 @@ begin
                 shift_out <= (others => '1');
                 shift_in  <= (others => '0');
                 bit_cnt   <= (others => '0');
-                sclk_int  <= '0';
+
                 phase     <= '0';
                 tx_ready  <= '1';
                 rx_valid  <= '0';
@@ -80,7 +80,7 @@ begin
                 case state is
                     --------------------------------------------------------
                     when S_IDLE =>
-                        sclk_int <= '0';
+
                         sclk     <= '0';
                         phase    <= '0';
                         tx_ready <= '1';
@@ -99,13 +99,13 @@ begin
                         if clk_en = '1' then
                             if phase = '0' then
                                 -- Leading edge: drive SCLK high, sample MISO
-                                sclk_int <= '1';
+
                                 sclk     <= '1';
                                 shift_in <= shift_in(6 downto 0) & miso;
                                 phase    <= '1';
                             else
                                 -- Trailing edge: drive SCLK low, shift next bit
-                                sclk_int <= '0';
+
                                 sclk     <= '0';
                                 phase    <= '0';
 
