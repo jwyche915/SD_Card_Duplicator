@@ -646,8 +646,8 @@ begin
                         -- Total blocks = (C_SIZE + 1) * 1024
                         i_card_total_blocks <= resize(
                             shift_left(
-                                resize(unsigned(csd_buf(7)(5 downto 0)
-                                                & csd_buf(8) & csd_buf(9)) + 1, 32),
+                                resize(unsigned(std_logic_vector'(csd_buf(7)(5 downto 0)
+                                                & csd_buf(8) & csd_buf(9))) + 1, 32),
                                 10),  -- * 1024
                             32);
                     else
@@ -658,11 +658,11 @@ begin
                         -- total_blocks = (C_SIZE + 1) * 2^(C_SIZE_MULT + 2)
                         i_card_total_blocks <= resize(
                             shift_left(
-                                resize(unsigned(csd_buf(6)(1 downto 0)
+                                resize(unsigned(std_logic_vector'(csd_buf(6)(1 downto 0)
                                                 & csd_buf(7)
-                                                & csd_buf(8)(7 downto 6)) + 1, 32),
-                                to_integer(unsigned(csd_buf(9)(1 downto 0)
-                                                    & csd_buf(10)(7 downto 7)) + 2)
+                                                & csd_buf(8)(7 downto 6))) + 1, 32),
+                                to_integer(unsigned(std_logic_vector'(csd_buf(9)(1 downto 0)
+                                                    & csd_buf(10)(7 downto 7))) + 2)
                             ),
                             32);
                     end if;
