@@ -68,14 +68,14 @@ set_property PULLUP TRUE [get_ports { src_sd_miso }]
 ## ----------------------------------------------------------------------------
 ## PMOD JA — Destination SD (VKLSVAN SD card module via SPI)
 ##   JA Pin 1 (AB22) → CS_N
-##   JA Pin 2 (AB21) → MOSI
-##   JA Pin 3 (AB20) → MISO
-##   JA Pin 4 (AB18) → SCLK
+##   JA Pin 2 (AB21) → SCLK
+##   JA Pin 3 (AB20) → MOSI
+##   JA Pin 4 (AB18) → MISO
 ## ----------------------------------------------------------------------------
 set_property -dict { PACKAGE_PIN AB22  IOSTANDARD LVCMOS33 } [get_ports { dst_sd_cs_n }]
-set_property -dict { PACKAGE_PIN AB21  IOSTANDARD LVCMOS33 } [get_ports { dst_sd_mosi }]
-set_property -dict { PACKAGE_PIN AB20  IOSTANDARD LVCMOS33 } [get_ports { dst_sd_miso }]
-set_property -dict { PACKAGE_PIN AB18  IOSTANDARD LVCMOS33 } [get_ports { dst_sd_sclk }]
+set_property -dict { PACKAGE_PIN AB21  IOSTANDARD LVCMOS33 } [get_ports { dst_sd_sclk }]
+set_property -dict { PACKAGE_PIN AB20  IOSTANDARD LVCMOS33 } [get_ports { dst_sd_mosi }]
+set_property -dict { PACKAGE_PIN AB18  IOSTANDARD LVCMOS33 } [get_ports { dst_sd_miso }]
 ## Pull-up on MISO: SD card tri-states this line when CS is high
 set_property PULLUP TRUE [get_ports { dst_sd_miso }]
 
