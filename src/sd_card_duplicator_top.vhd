@@ -31,6 +31,7 @@ entity sd_card_duplicator_top is
         src_sd_mosi   : out std_logic;   -- mapped to sd_cmd
         src_sd_miso   : in  std_logic;   -- mapped to sd_dat[0]
         src_sd_cs_n   : out std_logic;   -- mapped to sd_dat[3]
+        src_sd_reset_n : out std_logic;
 
         -- Destination SD card (PMOD JA)
         dst_sd_cs_n   : out std_logic;   -- JA pin 1 (AB22)
@@ -175,6 +176,7 @@ begin
         port map (
             clk          => clk_100mhz,
             reset        => reset,
+            sd_reset_n   => src_sd_reset_n,
             spi_tx_data  => src_spi_tx_data,
             spi_tx_valid => src_spi_tx_valid,
             spi_tx_ready => src_spi_tx_ready,
@@ -235,6 +237,7 @@ begin
         port map (
             clk          => clk_100mhz,
             reset        => reset,
+            sd_reset_n => open,
             spi_tx_data  => dst_spi_tx_data,
             spi_tx_valid => dst_spi_tx_valid,
             spi_tx_ready => dst_spi_tx_ready,

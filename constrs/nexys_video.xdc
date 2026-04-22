@@ -60,8 +60,9 @@ set_property -dict { PACKAGE_PIN Y13   IOSTANDARD LVCMOS25 } [get_ports { led[7]
 ## ----------------------------------------------------------------------------
 set_property -dict { PACKAGE_PIN W19   IOSTANDARD LVCMOS33 } [get_ports { src_sd_sclk }]
 set_property -dict { PACKAGE_PIN W20   IOSTANDARD LVCMOS33 } [get_ports { src_sd_mosi }]
-set_property -dict { PACKAGE_PIN V18   IOSTANDARD LVCMOS33 } [get_ports { src_sd_miso }]
-set_property -dict { PACKAGE_PIN T20   IOSTANDARD LVCMOS33 } [get_ports { src_sd_cs_n }]
+set_property -dict { PACKAGE_PIN V19   IOSTANDARD LVCMOS33 } [get_ports { src_sd_miso }]
+set_property -dict { PACKAGE_PIN U18   IOSTANDARD LVCMOS33 } [get_ports { src_sd_cs_n }]
+set_property -dict { PACKAGE_PIN V20   IOSTANDARD LVCMOS33 } [get_ports { src_sd_reset_n }]; #IO_L11N_T1_SRCC_14 Sch=sd_reset
 ## Pull-up on MISO: SD card tri-states this line when CS is high
 set_property PULLUP TRUE [get_ports { src_sd_miso }]
 

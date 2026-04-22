@@ -37,6 +37,8 @@ entity sd_card_controller is
         clk          : in  std_logic;
         reset        : in  std_logic;
 
+        -- Onboard SD card reset
+        sd_reset_n   : out std_logic;
         -- SPI master interface
         spi_tx_data  : out std_logic_vector(7 downto 0);
         spi_tx_valid : out std_logic;
@@ -77,7 +79,9 @@ architecture rtl of sd_card_controller is
     -- Types
     -- =========================================================================
     type state_t is (
-        -- Idle / reset
+        -- Reset SD card reader after FPGA power on
+        ST_RESET_ASSERT,
+        -- Idle...waiting for SD card initialization, write, or read signals
         ST_IDLE,
         -- Initialization sub-states
         ST_INIT_POWER,        -- send >=74 dummy clocks with CS high
@@ -119,12 +123,16 @@ architecture rtl of sd_card_controller is
         ST_ERROR
     );
 
-    signal state     : state_t := ST_IDLE;
+    signal state     : state_t := ST_RESET_ASSERT;
     signal ret_state : state_t := ST_IDLE;  -- return state after send_cmd
 
     -- =========================================================================
     -- Internal signals
     -- =========================================================================
+    -- Reset for onboard SD card...hold active low reset low for ~10ms
+    signal reset_cnt : unsigned(23 downto 0) := (others => '0'); 
+    constant RESET_THRESHOLD : unsigned(23 downto 0) := x"0F4240"; -- 10ms at 100MHz
+
     -- Command frame buffer: [cmd_byte, arg3..arg0, crc]
     signal cmd_buf     : std_logic_vector(47 downto 0) := (others => '0');
     signal cmd_byte_idx: unsigned(2 downto 0) := (others => '0');
@@ -195,7 +203,7 @@ begin
     begin
         if rising_edge(clk) then
             if reset = '1' then
-                state         <= ST_IDLE;
+                state         <= ST_RESET_ASSERT;
                 spi_tx_valid  <= '0';
                 spi_tx_data   <= (others => '1');
                 spi_cs_n      <= '1';
@@ -220,7 +228,24 @@ begin
                     send_pending <= '0';
                 end if;
 
+
                 case state is
+                -- ===============================================================
+                -- RESET ASSERT: Reset onboard SD card reader
+                -- ===============================================================                
+                when ST_RESET_ASSERT =>
+                    i_busy  <= '0';
+                    i_error <= '0';
+                    spi_cs_n <= '1';
+                    sd_reset_n <= '0';
+                    
+                    if reset_cnt >= RESET_THRESHOLD then
+                        sd_reset_n  <= '1'; -- Release reset
+                        reset_cnt <= (others => '0');
+                        state     <= ST_IDLE; -- Proceed to idle state
+                    else
+                        reset_cnt <= reset_cnt + 1;
+                    end if;
 
                 -- =============================================================
                 -- IDLE
@@ -229,6 +254,7 @@ begin
                     i_busy  <= '0';
                     i_error <= '0';
                     spi_cs_n <= '1';
+                    sd_reset_n <= '1';  -- stays high during operation
 
                     if cmd_init = '1' then
                         i_busy       <= '1';
@@ -249,7 +275,9 @@ begin
                 -- INIT: Power-up — send >=80 dummy clocks with CS high
                 -- =============================================================
                 when ST_INIT_POWER =>
+                    sd_reset_n <= '1';  -- stays high during operation
                     spi_cs_n <= '1';   -- CS stays high during dummy clocks
+                    
                     if spi_tx_ready = '1' then
                         if dummy_cnt >= 10 then  -- 10 * 8 = 80 clocks
                             dummy_cnt <= (others => '0');
@@ -265,6 +293,8 @@ begin
                 -- INIT: CMD0 — GO_IDLE_STATE
                 -- =============================================================
                 when ST_INIT_CMD0 =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     spi_cs_n      <= '0';
                     build_cmd(0, x"00000000", x"95");
 
@@ -276,6 +306,8 @@ begin
                     state        <= ST_INIT_CMD0_RESP;
 
                 when ST_INIT_CMD0_RESP =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     -- Continue sending remaining command bytes
                     if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
                         case cmd_byte_idx is
@@ -320,6 +352,8 @@ begin
                 -- INIT: CMD8 — SEND_IF_COND (voltage check)
                 -- =============================================================
                 when ST_INIT_CMD8 =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     build_cmd(8, x"000001AA", x"87");
 
                     wait_resp_cnt <= (others => '0');
@@ -330,6 +364,8 @@ begin
                     state         <= ST_INIT_CMD8_RESP;
 
                 when ST_INIT_CMD8_RESP =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     -- Send remaining bytes
                     if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
                         case cmd_byte_idx is
@@ -376,6 +412,8 @@ begin
 
                 -- Read 4 bytes of R7
                 when ST_INIT_CMD8_DATA =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if spi_tx_ready = '1' and send_pending = '0' then
                         send_byte    <= x"FF";
                         send_pending <= '1';
@@ -395,6 +433,8 @@ begin
                 -- INIT: CMD55 + ACMD41 loop
                 -- =============================================================
                 when ST_INIT_CMD55 =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     build_cmd(55, x"00000000", x"65");
 
                     wait_resp_cnt <= (others => '0');
@@ -404,6 +444,8 @@ begin
                     state         <= ST_INIT_CMD55_RESP;
 
                 when ST_INIT_CMD55_RESP =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
                         case cmd_byte_idx is
                             when "001" => send_byte <= cmd_buf(39 downto 32);
@@ -430,6 +472,8 @@ begin
                     end if;
 
                 when ST_INIT_ACMD41 =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     -- ACMD41: poll card initialization status (HCS bit 30 = SDHC support)
                     build_cmd(41, x"40000000", x"77");
 
@@ -440,6 +484,8 @@ begin
                     state         <= ST_INIT_ACMD41_RESP;
 
                 when ST_INIT_ACMD41_RESP =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
                         case cmd_byte_idx is
                             when "001" => send_byte <= cmd_buf(39 downto 32);
@@ -482,6 +528,8 @@ begin
                 -- INIT: CMD58 — READ_OCR
                 -- =============================================================
                 when ST_INIT_CMD58 =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     build_cmd(58, x"00000000", x"FD");
 
                     wait_resp_cnt <= (others => '0');
@@ -492,6 +540,8 @@ begin
                     state         <= ST_INIT_CMD58_RESP;
 
                 when ST_INIT_CMD58_RESP =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
                         case cmd_byte_idx is
                             when "001" => send_byte <= cmd_buf(39 downto 32);
@@ -519,6 +569,8 @@ begin
                     end if;
 
                 when ST_INIT_CMD58_DATA =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if spi_tx_ready = '1' and send_pending = '0' then
                         send_byte    <= x"FF";
                         send_pending <= '1';
@@ -541,6 +593,8 @@ begin
                 -- INIT: CMD9 — SEND_CSD (read card capacity)
                 -- =============================================================
                 when ST_INIT_CMD9 =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     spi_cs_n      <= '0';
                     build_cmd(9, x"00000000", x"AF");
 
@@ -552,6 +606,8 @@ begin
                     state         <= ST_INIT_CMD9_RESP;
 
                 when ST_INIT_CMD9_RESP =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
                         case cmd_byte_idx is
                             when "001" => send_byte <= cmd_buf(39 downto 32);
@@ -584,6 +640,8 @@ begin
 
                 -- Wait for data start token (0xFE)
                 when ST_INIT_CMD9_TOKEN =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if spi_tx_ready = '1' and send_pending = '0' then
                         send_byte    <= x"FF";
                         send_pending <= '1';
@@ -603,6 +661,8 @@ begin
 
                 -- Read 16 CSD bytes
                 when ST_INIT_CMD9_DATA =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if spi_tx_ready = '1' and send_pending = '0' then
                         send_byte    <= x"FF";
                         send_pending <= '1';
@@ -620,6 +680,8 @@ begin
 
                 -- Read & discard 2 CRC bytes
                 when ST_INIT_CMD9_CRC =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     if spi_tx_ready = '1' and send_pending = '0' then
                         send_byte    <= x"FF";
                         send_pending <= '1';
@@ -634,6 +696,8 @@ begin
                     end if;
 
                 when ST_INIT_COMPLETE =>
+                    sd_reset_n <= '1';  -- stays high during operation
+                    
                     -- Parse CSD to determine card capacity
                     if card_sdhc = '1' then
                         -- CSD v2.0 (SDHC/SDXC)
