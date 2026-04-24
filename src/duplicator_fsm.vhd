@@ -125,7 +125,7 @@ begin
                         block_cnt  <= (others => '0');
                         total_blks <= (others => '0');
                         fsm_idle   <= '0';
-                        state      <= ST_INIT_SRC;
+                        state      <= ST_INIT_DST;
                     end if;
 
                 -- =============================================================

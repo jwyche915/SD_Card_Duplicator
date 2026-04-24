@@ -35,9 +35,9 @@ entity sd_card_duplicator_top is
 
         -- Destination SD card (PMOD JA)
         dst_sd_cs_n   : out std_logic;   -- JA pin 1 (AB22)
-        dst_sd_mosi   : out std_logic;   -- JA pin 2 (AB21)
-        dst_sd_miso   : in  std_logic;   -- JA pin 3 (AB20)
-        dst_sd_sclk   : out std_logic;   -- JA pin 4 (AB18)
+        dst_sd_sclk   : out std_logic;   -- JA pin 2 (AB21)
+        dst_sd_mosi   : out  std_logic;  -- JA pin 3 (AB20)
+        dst_sd_miso   : in std_logic;    -- JA pin 4 (AB18)
 
         -- LEDs
         led           : out std_logic_vector(7 downto 0)

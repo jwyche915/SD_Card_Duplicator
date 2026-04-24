@@ -124,7 +124,7 @@ architecture rtl of sd_card_controller is
     );
 
     signal state     : state_t := ST_RESET_ASSERT;
-    signal ret_state : state_t := ST_IDLE;  -- return state after send_cmd
+    -- probably don't need this signal....signal ret_state : state_t := ST_IDLE;  -- return state after send_cmd
 
     -- =========================================================================
     -- Internal signals
@@ -278,15 +278,13 @@ begin
                     sd_reset_n <= '1';  -- stays high during operation
                     spi_cs_n <= '1';   -- CS stays high during dummy clocks
                     
-                    if spi_tx_ready = '1' then
-                        if dummy_cnt >= 10 then  -- 10 * 8 = 80 clocks
-                            dummy_cnt <= (others => '0');
-                            state     <= ST_INIT_CMD0;
-                        else
-                            spi_tx_data  <= x"FF";
-                            spi_tx_valid <= '1';
-                            dummy_cnt    <= dummy_cnt + 1;
-                        end if;
+                    if dummy_cnt >= 10 then  -- 10 * 8 = 80 clocks
+                        dummy_cnt <= (others => '0');
+                        state     <= ST_INIT_CMD0;
+                    elsif spi_tx_ready = '1' and send_pending = '0' then
+                        send_byte    <= x"FF";
+                        send_pending <= '1';
+                        dummy_cnt    <= dummy_cnt + 1;
                     end if;
 
                 -- =============================================================
@@ -300,7 +298,7 @@ begin
 
                     wait_resp_cnt <= (others => '0');
                     -- Send first byte
-                    send_byte    <= cmd_buf(47 downto 40);
+                    send_byte    <= "01" & std_logic_vector(to_unsigned(0, 6)); --cmd_buf(47 downto 40);
                     send_pending <= '1';
                     cmd_byte_idx <= "001";
                     state        <= ST_INIT_CMD0_RESP;
@@ -330,8 +328,12 @@ begin
                             send_pending <= '1';
                         end if;
 
-                        if spi_rx_valid = '1' then
+                        if spi_rx_valid = '1' then                          
                             if spi_rx_data(7) = '0' then  -- valid R1 response
+                            ---------------------------------
+                                                i_init_done <= '1';
+                                                state <= ST_IDLE;
+                            ------------------------------------
 
                                 if spi_rx_data = x"01" then  -- idle state, OK
                                     state <= ST_INIT_CMD8;
