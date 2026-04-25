@@ -330,11 +330,6 @@ begin
 
                         if spi_rx_valid = '1' then                          
                             if spi_rx_data(7) = '0' then  -- valid R1 response
-                            ---------------------------------
-                                                i_init_done <= '1';
-                                                state <= ST_IDLE;
-                            ------------------------------------
-
                                 if spi_rx_data = x"01" then  -- idle state, OK
                                     state <= ST_INIT_CMD8;
                                 else
@@ -354,7 +349,6 @@ begin
                 -- INIT: CMD8 — SEND_IF_COND (voltage check)
                 -- =============================================================
                 when ST_INIT_CMD8 =>
-                    sd_reset_n <= '1';  -- stays high during operation
                     
                     build_cmd(8, x"000001AA", x"87");
 
@@ -365,9 +359,7 @@ begin
                     cmd_byte_idx  <= "001";
                     state         <= ST_INIT_CMD8_RESP;
 
-                when ST_INIT_CMD8_RESP =>
-                    sd_reset_n <= '1';  -- stays high during operation
-                    
+                when ST_INIT_CMD8_RESP =>                    
                     -- Send remaining bytes
                     if cmd_byte_idx <= 5 and spi_tx_ready = '1' and send_pending = '0' then
                         case cmd_byte_idx is
@@ -391,7 +383,6 @@ begin
 
                         if spi_rx_valid = '1' then
                             if spi_rx_data(7) = '0' then
-
                                 if spi_rx_data = x"01" then
                                     -- SDv2 card: read 4 more bytes (R7)
                                     extra_byte_idx <= (others => '0');
@@ -414,8 +405,6 @@ begin
 
                 -- Read 4 bytes of R7
                 when ST_INIT_CMD8_DATA =>
-                    sd_reset_n <= '1';  -- stays high during operation
-                    
                     if spi_tx_ready = '1' and send_pending = '0' then
                         send_byte    <= x"FF";
                         send_pending <= '1';
@@ -435,8 +424,6 @@ begin
                 -- INIT: CMD55 + ACMD41 loop
                 -- =============================================================
                 when ST_INIT_CMD55 =>
-                    sd_reset_n <= '1';  -- stays high during operation
-                    
                     build_cmd(55, x"00000000", x"65");
 
                     wait_resp_cnt <= (others => '0');
@@ -468,14 +455,11 @@ begin
                         end if;
 
                         if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-
                             state   <= ST_INIT_ACMD41;
                         end if;
                     end if;
 
-                when ST_INIT_ACMD41 =>
-                    sd_reset_n <= '1';  -- stays high during operation
-                    
+                when ST_INIT_ACMD41 =>                    
                     -- ACMD41: poll card initialization status (HCS bit 30 = SDHC support)
                     build_cmd(41, x"40000000", x"77");
 
