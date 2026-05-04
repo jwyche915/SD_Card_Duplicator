@@ -70,6 +70,8 @@ architecture rtl of duplicator_fsm is
     );
 
     signal state : state_t := ST_IDLE;
+    attribute mark_debug : string;
+    attribute mark_debug of state : signal is "true";
 
     -- Block address counter
     signal block_cnt  : unsigned(31 downto 0) := (others => '0');
@@ -125,7 +127,7 @@ begin
                         block_cnt  <= (others => '0');
                         total_blks <= (others => '0');
                         fsm_idle   <= '0';
-                        state      <= ST_INIT_DST;
+                        state      <= ST_INIT_SRC;
                     end if;
 
                 -- =============================================================

@@ -94,6 +94,7 @@ architecture rtl of sd_card_controller is
         ST_INIT_CMD55_RESP,
         ST_INIT_ACMD41,       -- poll card initialization status
         ST_INIT_ACMD41_RESP,
+        ST_INIT_ACMD41_RETRY, -- CS deselect gap between retries
         ST_INIT_CMD58,        -- read OCR
         ST_INIT_CMD58_RESP,
         ST_INIT_CMD58_DATA,   -- read 4 OCR bytes
@@ -124,6 +125,8 @@ architecture rtl of sd_card_controller is
     );
 
     signal state     : state_t := ST_RESET_ASSERT;
+    attribute mark_debug : string;
+    attribute mark_debug of state : signal is "true";
     -- probably don't need this signal....signal ret_state : state_t := ST_IDLE;  -- return state after send_cmd
 
     -- =========================================================================
@@ -150,6 +153,7 @@ architecture rtl of sd_card_controller is
 
     -- Retry counter for ACMD41
     signal retry_cnt    : unsigned(15 downto 0) := (others => '0');
+    attribute mark_debug of retry_cnt : signal is "true";
 
     -- Internal card type register
     signal card_sdhc    : std_logic := '0';
@@ -160,7 +164,9 @@ architecture rtl of sd_card_controller is
     -- Internal status
     signal i_busy       : std_logic := '0';
     signal i_error      : std_logic := '0';
+    attribute mark_debug of i_error : signal is "true";
     signal i_init_done  : std_logic := '0';
+    attribute mark_debug of i_init_done : signal is "true";
     signal i_fast_mode  : std_logic := '0';
 
     -- R7 / OCR byte index
@@ -215,6 +221,7 @@ begin
                 data_out_valid<= '0';
                 data_in_req   <= '0';
                 send_pending  <= '0';
+                retry_cnt     <= (others => '0');
             else
                 -- Default de-assertions
                 spi_tx_valid   <= '0';
@@ -262,6 +269,7 @@ begin
                         i_fast_mode  <= '0';
                         card_sdhc    <= '0';
                         dummy_cnt    <= (others => '0');
+                        retry_cnt    <= (others => '0');
                         state        <= ST_INIT_POWER;
                     elsif cmd_read = '1' and i_init_done = '1' then
                         i_busy  <= '1';
@@ -424,6 +432,7 @@ begin
                 -- INIT: CMD55 + ACMD41 loop
                 -- =============================================================
                 when ST_INIT_CMD55 =>
+                    spi_cs_n      <= '0';  -- assert CS before command
                     build_cmd(55, x"00000000", x"65");
 
                     wait_resp_cnt <= (others => '0');
@@ -454,8 +463,21 @@ begin
                             send_pending <= '1';
                         end if;
 
-                        if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-                            state   <= ST_INIT_ACMD41;
+                        if spi_rx_valid = '1' then
+                            if spi_rx_data(7) = '0' then
+                                -- Valid R1: accept 0x00 or 0x01 (idle), reject others
+                                if spi_rx_data = x"00" or spi_rx_data = x"01" then
+                                    state <= ST_INIT_ACMD41;
+                                else
+                                    state <= ST_ERROR;
+                                end if;
+                            else
+                                -- No valid response yet; check timeout
+                                wait_resp_cnt <= wait_resp_cnt + 1;
+                                if wait_resp_cnt >= to_unsigned(CMD_TIMEOUT, 20) then
+                                    state <= ST_ERROR;
+                                end if;
+                            end if;
                         end if;
                     end if;
 
@@ -491,23 +513,45 @@ begin
                             send_pending <= '1';
                         end if;
 
-                        if spi_rx_valid = '1' and spi_rx_data(7) = '0' then
-
-                            if spi_rx_data = x"00" then
-                                -- Card is ready → read OCR
-                                state <= ST_INIT_CMD58;
-                            elsif spi_rx_data = x"01" then
-                                -- Still initializing, retry
-                                retry_cnt <= retry_cnt + 1;
-                                if retry_cnt >= 50000 then
-                                    state <= ST_ERROR;
+                        if spi_rx_valid = '1' then
+                            if spi_rx_data(7) = '0' then
+                                if spi_rx_data = x"00" then
+                                    -- Card is ready → read OCR
+                                    state <= ST_INIT_CMD58;
+                                elsif spi_rx_data = x"01" then
+                                    -- Still initializing, retry
+                                    retry_cnt <= retry_cnt + 1;
+                                    if retry_cnt >= 50000 then
+                                        state <= ST_ERROR;
+                                    else
+                                        state <= ST_INIT_ACMD41_RETRY;
+                                    end if;
                                 else
-                                    state <= ST_INIT_CMD55;
+                                    state <= ST_ERROR;
                                 end if;
                             else
-                                state <= ST_ERROR;
+                                -- No valid R1 yet; check timeout
+                                wait_resp_cnt <= wait_resp_cnt + 1;
+                                if wait_resp_cnt >= to_unsigned(CMD_TIMEOUT, 20) then
+                                    state <= ST_ERROR;
+                                end if;
                             end if;
                         end if;
+                    end if;
+
+                -- CS deselect gap: give card 8 clocks with CS high between retries
+                when ST_INIT_ACMD41_RETRY =>
+                    sd_reset_n   <= '1';
+                    spi_cs_n     <= '1';  -- deselect card
+
+                    if spi_tx_ready = '1' and send_pending = '0' then
+                        send_byte    <= x"FF";  -- 8 clocks with CS high
+                        send_pending <= '1';
+                    end if;
+
+                    if spi_rx_valid = '1' then
+                        -- Dummy byte done, re-enter CMD55/ACMD41 loop
+                        state <= ST_INIT_CMD55;
                     end if;
 
                 -- =============================================================
